@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+.claude
+data
+vibe
+*.db
+*.db-wal
+*.db-shm
+*.log
+geokeep

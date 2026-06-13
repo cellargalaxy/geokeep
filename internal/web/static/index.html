@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>geokeep</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="{{BASE_PATH}}/static/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="{{BASE_PATH}}/static/app.css">
+  <script>
+    // BasePath 注入：所有 fetch/资源拼接均以此为前缀。
+    window.__GEOKEEP_BASE__ = "{{BASE_PATH}}";
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div id="setup" class="card hidden">
+      <h2>初始化 geokeep</h2>
+      <p>首次使用：请创建管理员账号。</p>
+      <input id="setup-email" placeholder="邮箱" autocomplete="email">
+      <input id="setup-pw" type="password" placeholder="密码（≥10 字符）" autocomplete="new-password">
+      <button id="setup-btn">创建</button>
+      <pre id="setup-result" class="hidden"></pre>
+    </div>
+
+    <div id="login" class="card hidden">
+      <h2>登录</h2>
+      <input id="login-email" placeholder="邮箱" autocomplete="email">
+      <input id="login-pw" type="password" placeholder="密码" autocomplete="current-password">
+      <button id="login-btn">登录</button>
+      <div id="login-err" class="err"></div>
+    </div>
+
+    <div id="main" class="hidden">
+      <header>
+        <span class="brand">geokeep</span>
+        <span class="spacer"></span>
+        <span id="me"></span>
+        <button id="settings-btn">设置</button>
+        <button id="logout-btn">退出</button>
+      </header>
+      <div id="layout">
+        <aside id="side">
+          <h3>时间窗</h3>
+          <label>从 <input type="datetime-local" id="from"></label>
+          <label>到 <input type="datetime-local" id="to"></label>
+          <div class="row">
+            <button data-range="today">今天</button>
+            <button data-range="7d">7 天</button>
+            <button data-range="30d">30 天</button>
+          </div>
+          <h3>设备</h3>
+          <div id="devices"></div>
+          <h3>抽样</h3>
+          <select id="sample">
+            <option value="1">不抽样</option>
+            <option value="5">1/5</option>
+            <option value="10">1/10</option>
+            <option value="50">1/50</option>
+          </select>
+          <button id="apply">应用</button>
+          <h3>统计</h3>
+          <div id="stats"></div>
+          <h3>导入</h3>
+          <input type="file" id="import-file">
+          <select id="import-format">
+            <option value="">自动识别</option>
+            <option value="dawarich_v2">dawarich v2 (.tar.gz/.zip)</option>
+            <option value="dawarich_v1">dawarich v1 (data.json)</option>
+            <option value="owntracks_rec">OwnTracks .rec</option>
+            <option value="gpx">GPX</option>
+            <option value="geojson">GeoJSON</option>
+          </select>
+          <button id="import-btn">上传</button>
+          <div id="import-list"></div>
+          <h3>导出</h3>
+          <select id="export-format">
+            <option value="geojson">GeoJSON</option>
+            <option value="gpx">GPX</option>
+            <option value="owntracks_json">OwnTracks JSONL</option>
+            <option value="dawarich_v2">dawarich v2 (.tar.gz)</option>
+          </select>
+          <button id="export-btn">创建导出</button>
+          <div id="export-list"></div>
+        </aside>
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <div id="settings" class="card hidden">
+      <h2>设置</h2>
+      <div>API Key 尾段：<code id="apikey-tail"></code></div>
+      <button id="rotate-btn">轮换 API Key</button>
+      <pre id="rotate-result" class="hidden"></pre>
+      <h3>备份 / 恢复</h3>
+      <button id="backup-btn">立即下载备份</button>
+      <div>
+        <input type="file" id="restore-file" accept=".db">
+        <button id="restore-btn">上传并标记恢复</button>
+        <span class="hint">恢复需重启服务生效。</span>
+      </div>
+      <button id="settings-close">关闭</button>
+    </div>
+  </div>
+
+  <script src="{{BASE_PATH}}/static/vendor/leaflet/leaflet.js"></script>
+  <script src="{{BASE_PATH}}/static/app.js"></script>
+</body>
+</html>
