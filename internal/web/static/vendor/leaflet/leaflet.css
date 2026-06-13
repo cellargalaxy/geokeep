@@ -1,3 +1,0 @@
-/* Leaflet 占位：MVP 通过 leaflet.js 中转发到官方 CDN（仅含 CSS link）。
-   离线 / 私有部署场景请把官方 leaflet@1.9.x 的 leaflet.css / leaflet.js 落到本目录。 */
-@import url("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
