@@ -27,12 +27,16 @@ make build
 ### Docker
 
 ```sh
+mkdir -p data
 docker run -d --name geokeep \
+  --user "$(id -u):$(id -g)" \
   -e GEOKEEP_SECRET="$(head -c32 /dev/urandom | base64)" \
-  -v $PWD/data:/data \
+  -v "$PWD/data:/data" \
   -p 8080:8080 \
   ghcr.io/<owner>/geokeep:main
 ```
+
+`mkdir -p data` 避免 Docker 自动创建 root:root 的宿主目录；`--user "$(id -u):$(id -g)"` 让 SQLite、WAL、导入、导出、备份文件都按当前宿主用户 UID/GID 落盘。镜像内置 `/data` 归属为非 root 用户，未挂载 bind mount 时也不会以 root 写入。
 
 镜像由 GitHub Actions（`.github/workflows/docker.yml`）在任意分支 push 时自动构建并推送至 GHCR。
 

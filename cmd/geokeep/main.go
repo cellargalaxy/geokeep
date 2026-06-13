@@ -60,7 +60,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+	if err := prepareDataDirs(cfg); err != nil {
 		return err
 	}
 	if err := consumePendingRestore(cfg); err != nil {
@@ -105,6 +105,41 @@ func runServe(args []string) error {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	srv.Manager().Stop()
 	srv.ExportManager().Stop()
+	return nil
+}
+
+func prepareDataDirs(cfg *config.Config) error {
+	for _, dir := range []string{cfg.DataDir, cfg.ImportsDir(), cfg.ExportsDir(), cfg.BackupsDir()} {
+		if err := ensureWritableDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureWritableDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("准备数据目录 %q 失败: %w", dir, err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("检查数据目录 %q 失败: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("数据目录 %q 不是目录", dir)
+	}
+	f, err := os.CreateTemp(dir, ".geokeep-write-test-*")
+	if err != nil {
+		return fmt.Errorf("数据目录 %q 不可写: %w。Docker bind mount 请先在宿主机执行 `mkdir -p data`，并用 `--user \"$(id -u):$(id -g)\" -v \"$PWD/data:/data\"` 启动", dir, err)
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("关闭数据目录探测文件 %q 失败: %w", name, err)
+	}
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("删除数据目录探测文件 %q 失败: %w", name, err)
+	}
 	return nil
 }
 
