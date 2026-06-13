@@ -188,6 +188,8 @@ func (s *Server) handleDownloadExport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	// Content-Disposition 让浏览器按导出格式后缀命名下载，便于用户识别。
+	w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(filepath.Base(ex.FilePath))+`"`)
 	http.ServeFile(w, r, ex.FilePath)
 }
 

@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 
 	"geokeep/internal/model"
@@ -29,6 +30,10 @@ func (p *gpxParser) Parse(ctx context.Context, r io.Reader, emit func(*model.Poi
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
+				// 「不脑补时间戳」原则：缺失 <time> 的 trkpt 跳过，避免 Unix(0001-01-01) 这种伪值落库。
+				if pt.Timestamp.IsZero() {
+					continue
+				}
 				p := &model.Point{
 					Timestamp: pt.Timestamp.Unix(),
 					Latitude:  pt.Latitude,
@@ -37,6 +42,18 @@ func (p *gpxParser) Parse(ctx context.Context, r io.Reader, emit func(*model.Poi
 				if pt.Elevation.NotNull() {
 					v := pt.Elevation.Value()
 					p.Altitude = &v
+				}
+				// raw_data 保留：与其它 importer 一致，序列化 trkpt 关键字段。
+				raw := map[string]any{
+					"lat":  pt.Latitude,
+					"lon":  pt.Longitude,
+					"time": pt.Timestamp.UTC().Format("2006-01-02T15:04:05Z"),
+				}
+				if pt.Elevation.NotNull() {
+					raw["ele"] = pt.Elevation.Value()
+				}
+				if b, err := json.Marshal(raw); err == nil {
+					p.RawData = b
 				}
 				if err := emit(p); err != nil {
 					return err

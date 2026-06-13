@@ -14,9 +14,8 @@ import (
 
 // 登录失败保护参数
 const (
-	loginMaxFails  = 5
-	loginLockSecs  = 15 * 60
-	loginLockReset = time.Hour
+	loginMaxFails = 5
+	loginLockSecs = 15 * 60
 )
 
 type setupReq struct {

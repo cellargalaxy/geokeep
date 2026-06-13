@@ -131,6 +131,28 @@ func TestGPX_Roundtrip(t *testing.T) {
 	}
 }
 
+// 「不脑补时间戳」：缺 <time> 的 trkpt 应跳过，且保留 raw_data 与时间字段。
+func TestGPX_SkipMissingTime(t *testing.T) {
+	p, _ := importer.NewParser(importer.FormatGPX)
+	input := `<?xml version="1.0"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+  <trk><trkseg>
+    <trkpt lat="1.0" lon="2.0"><ele>10</ele></trkpt>
+    <trkpt lat="1.1" lon="2.1"><ele>11</ele><time>2024-01-02T03:04:06Z</time></trkpt>
+  </trkseg></trk>
+</gpx>`
+	pts := collect(t, p, input)
+	if len(pts) != 1 {
+		t.Fatalf("缺 time 的点应跳过；期望 1 条，实际 %d", len(pts))
+	}
+	if pts[0].Timestamp <= 0 {
+		t.Fatalf("剩余点应有正时间戳: %d", pts[0].Timestamp)
+	}
+	if len(pts[0].RawData) == 0 {
+		t.Fatal("GPX 应保留 raw_data")
+	}
+}
+
 func TestDawarichV2_TarGz(t *testing.T) {
 	// 手工拼一个 .tar.gz：含 points/2024-01.jsonl
 	jsonl := `{"latitude":1.0,"longitude":2.0,"timestamp":1000,"vertical_accuracy":4,"course":180,"ssid":"Home"}` + "\n" +
