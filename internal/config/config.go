@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -21,6 +22,8 @@ type Config struct {
 	OSMTileURL  string // 前端瓦片 URL 模板
 	Dev         bool   // 开发模式：允许 HTTP Cookie、放开 CORS
 }
+
+var basePathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$`)
 
 // Load 从命令行参数（os.Args[2:]）和环境变量解析配置。
 // args 通常由 main 拆出，去掉子命令名后再传入。
@@ -74,11 +77,13 @@ func (c *Config) Validate() error {
 		return errors.New("max-upload-mb 必须 > 0")
 	}
 	if c.BasePath != "" {
-		if !strings.HasPrefix(c.BasePath, "/") {
-			return fmt.Errorf("base-path 必须以 / 开头: %q", c.BasePath)
+		if !basePathPattern.MatchString(c.BasePath) {
+			return fmt.Errorf("base-path 必须形如 /xxx 或 /xxx/yyy，且不带尾斜杠: %q", c.BasePath)
 		}
-		if strings.HasSuffix(c.BasePath, "/") {
-			return fmt.Errorf("base-path 不可以 / 结尾: %q", c.BasePath)
+		for _, part := range strings.Split(strings.TrimPrefix(c.BasePath, "/"), "/") {
+			if part == "." || part == ".." {
+				return fmt.Errorf("base-path 不允许 . 或 .. 路径段: %q", c.BasePath)
+			}
 		}
 	}
 	return nil

@@ -16,8 +16,13 @@ import (
 func samplePoints() []model.Point {
 	alt := 35.0
 	acc := 5
+	vacc := 3
+	course := 90.0
+	battStatus := 2
+	conn := 0
+	trigger := 4
 	return []model.Point{
-		{Timestamp: 1704067200, Latitude: 1.0, Longitude: 2.0, Altitude: &alt, Accuracy: &acc, Velocity: "10", TrackerID: "X", Source: "owntracks"},
+		{Timestamp: 1704067200, Latitude: 1.0, Longitude: 2.0, Altitude: &alt, Accuracy: &acc, VerticalAccuracy: &vacc, Velocity: "10", Course: &course, BatteryStatus: &battStatus, Connection: &conn, Trigger: &trigger, TrackerID: "X", SSID: "Home", InRegions: `["home"]`, RawData: []byte(`{"_type":"location"}`), Source: "owntracks"},
 		{Timestamp: 1706659200, Latitude: 1.1, Longitude: 2.1, TrackerID: "X", Source: "owntracks"}, // 2024-01-31 -> 2024-01
 	}
 }
@@ -79,7 +84,7 @@ func TestOwnTracksJSONWriter_Roundtrip(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[0]), &obj); err != nil {
 		t.Fatalf("非 JSON: %v", err)
 	}
-	if obj["_type"] != "location" || obj["tid"] != "X" {
+	if obj["_type"] != "location" || obj["tid"] != "X" || obj["cog"] == nil || obj["conn"] != "w" || obj["t"] != "u" {
 		t.Fatalf("字段错: %v", obj)
 	}
 }
@@ -100,6 +105,7 @@ func TestDawarichV2Writer_TarLayout(t *testing.T) {
 	}
 	tr := tar.NewReader(gz)
 	var sawJSONL, sawManifest bool
+	var sawExtendedFields bool
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -111,12 +117,24 @@ func TestDawarichV2Writer_TarLayout(t *testing.T) {
 		switch {
 		case strings.HasPrefix(h.Name, "points/") && strings.HasSuffix(h.Name, ".jsonl"):
 			sawJSONL = true
+			body, err := io.ReadAll(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			line := strings.Split(strings.TrimSpace(string(body)), "\n")[0]
+			var row map[string]any
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			if row["vertical_accuracy"] != nil && row["course"] != nil && row["raw_data"] != nil && row["in_regions"] != nil {
+				sawExtendedFields = true
+			}
 		case h.Name == "MANIFEST.json":
 			sawManifest = true
 		}
 	}
-	if !sawJSONL || !sawManifest {
-		t.Fatalf("缺关键条目: jsonl=%v manifest=%v", sawJSONL, sawManifest)
+	if !sawJSONL || !sawManifest || !sawExtendedFields {
+		t.Fatalf("缺关键条目或扩展字段: jsonl=%v manifest=%v extended=%v", sawJSONL, sawManifest, sawExtendedFields)
 	}
 }
 

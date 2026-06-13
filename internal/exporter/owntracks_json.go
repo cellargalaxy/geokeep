@@ -40,11 +40,20 @@ func (o *owntracksJSONWriter) Write(p model.Point) error {
 			obj["vel"] = n
 		}
 	}
+	if p.Course != nil {
+		obj["cog"] = *p.Course
+	}
 	if p.Battery != nil {
 		obj["batt"] = *p.Battery
 	}
 	if p.BatteryStatus != nil {
 		obj["bs"] = *p.BatteryStatus
+	}
+	if p.Connection != nil {
+		obj["conn"] = reverseConnection(*p.Connection)
+	}
+	if p.Trigger != nil {
+		obj["t"] = reverseTrigger(*p.Trigger)
 	}
 	if p.TrackerID != "" {
 		obj["tid"] = p.TrackerID
@@ -58,6 +67,12 @@ func (o *owntracksJSONWriter) Write(p model.Point) error {
 	if p.BSSID != "" {
 		obj["BSSID"] = p.BSSID
 	}
+	if xs := stringArray(p.InRegions); len(xs) > 0 {
+		obj["inregions"] = xs
+	}
+	if xs := stringArray(p.InRIDs); len(xs) > 0 {
+		obj["inrids"] = xs
+	}
 	b, err := json.Marshal(obj)
 	if err != nil {
 		return err
@@ -70,3 +85,48 @@ func (o *owntracksJSONWriter) Write(p model.Point) error {
 }
 
 func (o *owntracksJSONWriter) Close() error { return nil }
+
+func reverseConnection(v int) string {
+	switch v {
+	case 0:
+		return "w"
+	case 1:
+		return "o"
+	case 2:
+		return "m"
+	default:
+		return ""
+	}
+}
+
+func reverseTrigger(v int) string {
+	switch v {
+	case 0:
+		return "p"
+	case 1:
+		return "c"
+	case 2:
+		return "b"
+	case 3:
+		return "r"
+	case 4:
+		return "u"
+	case 5:
+		return "t"
+	case 6:
+		return "v"
+	default:
+		return ""
+	}
+}
+
+func stringArray(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var xs []string
+	if err := json.Unmarshal([]byte(raw), &xs); err != nil {
+		return nil
+	}
+	return xs
+}

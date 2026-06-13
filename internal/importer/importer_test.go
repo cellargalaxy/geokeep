@@ -44,7 +44,7 @@ func TestDawarichV1(t *testing.T) {
 	input := `{
 	  "users": [{"id":1}],
 	  "points": [
-	    {"latitude":1.1, "longitude":2.2, "timestamp":1000, "tracker_id":"X"},
+	    {"latitude":1.1, "longitude":2.2, "timestamp":1000, "tracker_id":"X", "vertical_accuracy":3, "course":90, "battery_status":2, "in_regions":["home"]},
 	    {"latitude":1.2, "longitude":2.3, "timestamp":1001}
 	  ],
 	  "trips": []
@@ -55,6 +55,15 @@ func TestDawarichV1(t *testing.T) {
 	}
 	if pts[0].TrackerID != "X" {
 		t.Fatalf("tracker_id 错")
+	}
+	if pts[0].VerticalAccuracy == nil || *pts[0].VerticalAccuracy != 3 {
+		t.Fatalf("vertical_accuracy 未导入: %+v", pts[0].VerticalAccuracy)
+	}
+	if pts[0].Course == nil || *pts[0].Course != 90 {
+		t.Fatalf("course 未导入: %+v", pts[0].Course)
+	}
+	if pts[0].InRegions != `["home"]` || len(pts[0].RawData) == 0 {
+		t.Fatalf("in_regions/raw_data 未保留: %q raw=%d", pts[0].InRegions, len(pts[0].RawData))
 	}
 }
 
@@ -70,6 +79,25 @@ func TestGeoJSON_FeatureCollection(t *testing.T) {
 	pts := collect(t, p, input)
 	if len(pts) != 2 {
 		t.Fatalf("应有 2 条: %d", len(pts))
+	}
+}
+
+func TestGeoJSON_LineStringWithCoordTimes(t *testing.T) {
+	p, _ := importer.NewParser(importer.FormatGeoJSON)
+	input := `{"type":"Feature","geometry":{"type":"LineString","coordinates":[[1,2,10],[3,4,11]]},"properties":{"coordTimes":["2024-01-02T03:04:05Z",1001]}}`
+	var got []*model.Point
+	err := p.Parse(context.Background(), strings.NewReader(input), func(p *model.Point) error {
+		got = append(got, p)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("LineString+coordTimes 应成功: %v", err)
+	}
+	if len(got) != 2 || got[0].Latitude != 2 || got[0].Longitude != 1 || got[0].Timestamp != 1704164645 {
+		t.Fatalf("LineString 展开错误: %+v", got)
+	}
+	if got[0].Altitude == nil || *got[0].Altitude != 10 || len(got[0].RawData) == 0 {
+		t.Fatalf("LineString alt/raw_data 未保留: %+v", got[0])
 	}
 }
 
@@ -105,7 +133,7 @@ func TestGPX_Roundtrip(t *testing.T) {
 
 func TestDawarichV2_TarGz(t *testing.T) {
 	// 手工拼一个 .tar.gz：含 points/2024-01.jsonl
-	jsonl := `{"latitude":1.0,"longitude":2.0,"timestamp":1000}` + "\n" +
+	jsonl := `{"latitude":1.0,"longitude":2.0,"timestamp":1000,"vertical_accuracy":4,"course":180,"ssid":"Home"}` + "\n" +
 		`{"latitude":1.1,"longitude":2.1,"timestamp":1001}` + "\n"
 
 	var tarBuf bytes.Buffer
@@ -134,6 +162,9 @@ func TestDawarichV2_TarGz(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("应有 2 条: %d", len(got))
+	}
+	if got[0].VerticalAccuracy == nil || *got[0].VerticalAccuracy != 4 || got[0].Course == nil || *got[0].Course != 180 || got[0].SSID != "Home" {
+		t.Fatalf("dawarich v2 扩展字段未导入: %+v", got[0])
 	}
 }
 

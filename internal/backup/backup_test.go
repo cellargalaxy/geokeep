@@ -3,6 +3,7 @@ package backup_test
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -45,19 +46,61 @@ func TestRestore_BackupAndCopy(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.db")
 	dst := filepath.Join(dir, "dst.db")
-	// 准备 src
-	if err := write(src, []byte("SQLite format 3\x00fake")); err != nil {
-		t.Fatal(err)
-	}
-	if err := write(dst, []byte("oldcontent")); err != nil {
-		t.Fatal(err)
-	}
+	makeSQLiteDB(t, src, "src@x", "ksrc")
+	makeSQLiteDB(t, dst, "old@x", "kold")
+
 	if err := backup.Restore(src, dst); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := read(dst)
 	if !bytes.HasPrefix(content, []byte("SQLite format 3")) {
-		t.Fatalf("dst 未被覆盖: %q", content[:16])
+		t.Fatalf("dst 未被覆盖为 SQLite: %q", content[:16])
+	}
+	restored, err := db.Open(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	var n int64
+	if err := restored.Model(&model.User{}).Where("email = ?", "src@x").Count(&n).Error; err != nil || n != 1 {
+		t.Fatalf("恢复后应包含源库用户: n=%d err=%v", n, err)
+	}
+}
+
+func TestRestore_InvalidSQLiteDoesNotReplaceExistingDB(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "bad.db")
+	dst := filepath.Join(dir, "dst.db")
+	if err := write(src, []byte("SQLite format 3\x00fake")); err != nil {
+		t.Fatal(err)
+	}
+	makeSQLiteDB(t, dst, "old@x", "kold")
+	before, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backup.Restore(src, dst); err == nil {
+		t.Fatal("损坏 SQLite 文件应被拒绝")
+	}
+	after, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("恢复失败时不应替换现有数据库")
+	}
+}
+
+func makeSQLiteDB(t *testing.T, path, email, key string) {
+	t.Helper()
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	u := &model.User{Email: email, PasswordHash: "x", APIKey: key, Settings: "{}"}
+	if err := d.WriteTx(context.Background(), func(tx *gorm.DB) error { return tx.Create(u).Error }); err != nil {
+		t.Fatal(err)
 	}
 }
 

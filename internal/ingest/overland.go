@@ -17,6 +17,12 @@ type OverlandBatch struct {
 	Trip      json.RawMessage   `json:"trip,omitempty"`
 }
 
+type overlandRawBatch struct {
+	Locations []json.RawMessage `json:"locations"`
+	Current   json.RawMessage   `json:"current,omitempty"`
+	Trip      json.RawMessage   `json:"trip,omitempty"`
+}
+
 // OverlandFeature 是单条 GeoJSON Feature。
 type OverlandFeature struct {
 	Type       string             `json:"type"`
@@ -55,18 +61,23 @@ type OverlandProperties struct {
 }
 
 // MapOverlandBatch 将 Overland batch 拆为多条 Point。
-// rawFeatures 与 features 一一对应；保留原始 Feature JSON 到 point.RawData，便于追溯。
+// 每条 point.RawData 保留原始 Feature；若 batch 含 current/trip，则一并放入 overland_extra。
 func MapOverlandBatch(raw []byte) ([]*model.Point, error) {
-	var batch OverlandBatch
+	var batch overlandRawBatch
 	if err := json.Unmarshal(raw, &batch); err != nil {
 		return nil, err
 	}
 	out := make([]*model.Point, 0, len(batch.Locations))
-	for _, f := range batch.Locations {
+	for _, rawFeature := range batch.Locations {
+		var f OverlandFeature
+		if err := json.Unmarshal(rawFeature, &f); err != nil {
+			continue
+		}
 		p, err := mapOverlandFeature(f)
 		if err != nil {
 			continue // 单条解析失败跳过，不影响整批
 		}
+		p.RawData = buildOverlandRawData(rawFeature, batch.Current, batch.Trip)
 		out = append(out, p)
 	}
 	return out, nil
@@ -88,8 +99,6 @@ func mapOverlandFeature(f OverlandFeature) (*model.Point, error) {
 		SSID:      f.Properties.Wifi,
 		Source:    "overland",
 	}
-	rawFeat, _ := json.Marshal(f)
-	p.RawData = rawFeat
 
 	if f.Properties.Altitude != nil {
 		v := *f.Properties.Altitude
@@ -137,6 +146,28 @@ func mapOverlandFeature(f OverlandFeature) (*model.Point, error) {
 	mb, _ := json.Marshal(motion)
 	p.MotionData = mb
 	return p, nil
+}
+
+func buildOverlandRawData(rawFeature, current, trip json.RawMessage) []byte {
+	if len(current) == 0 && len(trip) == 0 {
+		return append([]byte(nil), rawFeature...)
+	}
+	extra := map[string]json.RawMessage{}
+	if len(current) > 0 {
+		extra["current"] = current
+	}
+	if len(trip) > 0 {
+		extra["trip"] = trip
+	}
+	wrapped := map[string]any{
+		"feature":        json.RawMessage(rawFeature),
+		"overland_extra": extra,
+	}
+	b, err := json.Marshal(wrapped)
+	if err != nil {
+		return append([]byte(nil), rawFeature...)
+	}
+	return b
 }
 
 // 与 OwnTracks battery_status (bs) 对齐：unknown=0/charging=2/full=3/unplugged=1。

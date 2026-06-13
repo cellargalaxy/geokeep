@@ -39,31 +39,7 @@ func (d *dawarichV2Writer) Write(p model.Point) error {
 		buf = &bytes.Buffer{}
 		d.monthly[key] = buf
 	}
-	// 输出字段命名对齐 dawarich points 表
-	obj := map[string]any{
-		"latitude":  p.Latitude,
-		"longitude": p.Longitude,
-		"timestamp": p.Timestamp,
-	}
-	if p.Altitude != nil {
-		obj["altitude"] = *p.Altitude
-	}
-	if p.Velocity != "" {
-		obj["velocity"] = p.Velocity
-	}
-	if p.Accuracy != nil {
-		obj["accuracy"] = *p.Accuracy
-	}
-	if p.Battery != nil {
-		obj["battery"] = *p.Battery
-	}
-	if p.TrackerID != "" {
-		obj["tracker_id"] = p.TrackerID
-	}
-	if p.Topic != "" {
-		obj["topic"] = p.Topic
-	}
-	b, err := json.Marshal(obj)
+	b, err := json.Marshal(dawarichObject(p))
 	if err != nil {
 		return err
 	}

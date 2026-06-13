@@ -1,6 +1,7 @@
 package ingest_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"geokeep/internal/ingest"
@@ -70,6 +71,14 @@ func TestMapOverlandBatch(t *testing.T) {
 	}
 	if len(p.MotionData) == 0 {
 		t.Errorf("motion_data 应有内容")
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(p.RawData, &raw); err != nil {
+		t.Fatalf("raw_data 应为 JSON: %v", err)
+	}
+	extra, ok := raw["overland_extra"].(map[string]any)
+	if !ok || extra["current"] == nil || extra["trip"] == nil {
+		t.Fatalf("raw_data 应保留 current/trip: %v", raw)
 	}
 }
 

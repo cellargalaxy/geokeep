@@ -7,6 +7,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -18,6 +19,10 @@ import (
 	"time"
 
 	"geokeep/internal/db"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // Service 持有 db 与备份目录。
@@ -64,9 +69,12 @@ func (s *Service) StreamBackup(ctx context.Context, w io.Writer) (int64, error) 
 }
 
 // Restore 把候选 .db 文件覆盖到 dst。
-// 强校验：文件存在 + 大小 > 0；不做 PRAGMA integrity_check（GORM 启动期会再校验 schema）。
+// 强校验：SQLite 文件头 + PRAGMA integrity_check；失败时不会移动现有 dst。
 // 调用此函数前必须确保 db 进程已停止；MVP 用 web 标记文件 + 重启实现「下次启动恢复」。
 func Restore(src, dst string) error {
+	if samePath(src, dst) {
+		return errors.New("源文件与目标数据库相同")
+	}
 	st, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -74,26 +82,89 @@ func Restore(src, dst string) error {
 	if st.Size() == 0 {
 		return errors.New("候选备份文件为空")
 	}
+	if err := validateSQLite(src); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+
 	bak := dst + ".bak-" + time.Now().UTC().Format("20060102-150405")
+	renamed := false
 	if _, err := os.Stat(dst); err == nil {
 		if err := os.Rename(dst, bak); err != nil {
 			return err
 		}
+		renamed = true
 	}
+	success := false
+	defer func() {
+		if success {
+			return
+		}
+		_ = os.Remove(dst)
+		if renamed {
+			_ = os.Rename(bak, dst)
+		}
+	}()
+
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	success = true
+	return nil
+}
+
+func validateSQLite(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
 		return err
 	}
+	magic := make([]byte, 16)
+	_, err = io.ReadFull(f, magic)
+	_ = f.Close()
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(magic, []byte("SQLite format 3\x00")) {
+		return errors.New("候选备份不是 SQLite 数据库文件")
+	}
+	gdb, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return fmt.Errorf("打开候选备份失败: %w", err)
+	}
+	sqlDB, dbErr := gdb.DB()
+	if dbErr == nil {
+		defer sqlDB.Close()
+	}
+	var result string
+	if err := gdb.Raw("PRAGMA integrity_check").Scan(&result).Error; err != nil {
+		return fmt.Errorf("integrity_check 失败: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("integrity_check 非 ok: %s", result)
+	}
 	return nil
+}
+
+func samePath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && aa == bb
 }
 
 func randName() (string, error) {
