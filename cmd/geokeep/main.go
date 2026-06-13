@@ -130,7 +130,7 @@ func ensureWritableDir(dir string) error {
 	}
 	f, err := os.CreateTemp(dir, ".geokeep-write-test-*")
 	if err != nil {
-		return fmt.Errorf("数据目录 %q 不可写: %w。Docker bind mount 请先在宿主机执行 `mkdir -p data`，并用 `--user \"$(id -u):$(id -g)\" -v \"$PWD/data:/data\"` 启动", dir, err)
+		return fmt.Errorf("数据目录 %q 不可写: %w。Docker 默认入口会自动修正 /data 权限；若仍出现此错误，请确认 bind mount 不是只读，并设置 `-e GEOKEEP_RUN_UID=\"$(id -u)\" -e GEOKEEP_RUN_GID=\"$(id -g)\"` 后启动", dir, err)
 	}
 	name := f.Name()
 	if err := f.Close(); err != nil {

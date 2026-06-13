@@ -27,16 +27,16 @@ make build
 ### Docker
 
 ```sh
-mkdir -p data
 docker run -d --name geokeep \
-  --user "$(id -u):$(id -g)" \
   -e GEOKEEP_SECRET="$(head -c32 /dev/urandom | base64)" \
+  -e GEOKEEP_RUN_UID="$(id -u)" \
+  -e GEOKEEP_RUN_GID="$(id -g)" \
   -v "$PWD/data:/data" \
   -p 8080:8080 \
   ghcr.io/<owner>/geokeep:main
 ```
 
-`mkdir -p data` 避免 Docker 自动创建 root:root 的宿主目录；`--user "$(id -u):$(id -g)"` 让 SQLite、WAL、导入、导出、备份文件都按当前宿主用户 UID/GID 落盘。镜像内置 `/data` 归属为非 root 用户，未挂载 bind mount 时也不会以 root 写入。
+Docker 入口会自动创建并修正 `/data` 权限，然后降权执行 geokeep。`GEOKEEP_RUN_UID/GID` 建议在 bind mount 场景设置为当前宿主用户，这样 SQLite、WAL、导入、导出、备份文件都按当前 UID/GID 落盘；使用 Docker named volume 时可省略这两个变量。
 
 镜像由 GitHub Actions（`.github/workflows/docker.yml`）在任意分支 push 时自动构建并推送至 GHCR。
 
@@ -78,6 +78,7 @@ geokeep restore --from /path/x.db   # 离线恢复
 | `GEOKEEP_LISTEN` | `:8080` | HTTP 监听 |
 | `GEOKEEP_DATA_DIR` | `./data` | 数据目录（含 `geokeep.db / imports/ / exports/ / backups/`） |
 | `GEOKEEP_SECRET` | — | 必填，Session HMAC 密钥（≥ 16 字节，建议 32） |
+| `GEOKEEP_RUN_UID` / `GEOKEEP_RUN_GID` | `65532` | 仅 Docker 入口使用：修正 `/data` 权限后降权到该 UID/GID |
 | `GEOKEEP_BASE_PATH` | 空 | 子路径反代前缀，例如 `/xxx`；不带尾斜杠 |
 | `GEOKEEP_MAX_UPLOAD_MB` | `5` | 上传字节上限 |
 | `GEOKEEP_OSM_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | OSM 瓦片模板 |
