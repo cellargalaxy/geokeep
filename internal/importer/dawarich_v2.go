@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 
 	"geokeep/internal/model"
@@ -23,21 +24,40 @@ import (
 type dawarichV2Parser struct{}
 
 func (p *dawarichV2Parser) Parse(ctx context.Context, r io.Reader, emit func(*model.Point) error) error {
-	raw, err := io.ReadAll(r)
-	if err != nil {
+	// 尝试嗅探 magic bytes
+	header := make([]byte, 4)
+	n, err := io.ReadAtLeast(r, header, 2)
+	if err != nil && err != io.EOF {
 		return err
 	}
-	if len(raw) >= 4 && raw[0] == 'P' && raw[1] == 'K' {
-		return parseV2Zip(ctx, raw, emit)
+	// 将读取出的头部与后续流拼接回来
+	fullR := io.MultiReader(bytes.NewReader(header[:n]), r)
+
+	if n >= 4 && header[0] == 'P' && header[1] == 'K' {
+		// Zip 需要 ReaderAt。如果 r 是 *os.File，直接用；否则只能 ReadAll（兜底）。
+		if f, ok := r.(*os.File); ok {
+			st, err := f.Stat()
+			if err != nil {
+				return err
+			}
+			return parseV2Zip(ctx, f, st.Size(), emit)
+		}
+		raw, err := io.ReadAll(fullR)
+		if err != nil {
+			return err
+		}
+		return parseV2Zip(ctx, bytes.NewReader(raw), int64(len(raw)), emit)
 	}
-	if len(raw) >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
-		return parseV2TarGz(ctx, raw, emit)
+
+	if n >= 2 && header[0] == 0x1f && header[1] == 0x8b {
+		return parseV2TarGz(ctx, fullR, emit)
 	}
+
 	return errors.New("dawarich_v2: 仅支持 .tar.gz 或 .zip")
 }
 
-func parseV2TarGz(ctx context.Context, raw []byte, emit func(*model.Point) error) error {
-	gz, err := gzip.NewReader(bytes.NewReader(raw))
+func parseV2TarGz(ctx context.Context, r io.Reader, emit func(*model.Point) error) error {
+	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -69,8 +89,8 @@ func parseV2TarGz(ctx context.Context, raw []byte, emit func(*model.Point) error
 	return nil
 }
 
-func parseV2Zip(ctx context.Context, raw []byte, emit func(*model.Point) error) error {
-	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+func parseV2Zip(ctx context.Context, ra io.ReaderAt, size int64, emit func(*model.Point) error) error {
+	zr, err := zip.NewReader(ra, size)
 	if err != nil {
 		return err
 	}

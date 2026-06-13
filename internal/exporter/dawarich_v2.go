@@ -2,11 +2,11 @@ package exporter
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"geokeep/internal/model"
@@ -18,7 +18,7 @@ type dawarichV2Writer struct {
 	dest    io.Writer
 	gz      *gzip.Writer
 	tw      *tar.Writer
-	monthly map[string]*bytes.Buffer // key: "2024-01" → 累积 JSONL
+	monthly map[string]*os.File // key: "2024-01" → 临时文件
 }
 
 func (d *dawarichV2Writer) Extension() string { return "tar.gz" }
@@ -27,36 +27,58 @@ func (d *dawarichV2Writer) Open(w io.Writer) error {
 	d.dest = w
 	d.gz = gzip.NewWriter(w)
 	d.tw = tar.NewWriter(d.gz)
-	d.monthly = make(map[string]*bytes.Buffer)
+	d.monthly = make(map[string]*os.File)
 	return nil
 }
 
 func (d *dawarichV2Writer) Write(p model.Point) error {
 	t := time.Unix(p.Timestamp, 0).UTC()
 	key := fmt.Sprintf("%04d-%02d", t.Year(), int(t.Month()))
-	buf, ok := d.monthly[key]
+	f, ok := d.monthly[key]
 	if !ok {
-		buf = &bytes.Buffer{}
-		d.monthly[key] = buf
+		var err error
+		f, err = os.CreateTemp("", "geokeep-export-*.jsonl")
+		if err != nil {
+			return err
+		}
+		d.monthly[key] = f
 	}
 	b, err := json.Marshal(dawarichObject(p))
 	if err != nil {
 		return err
 	}
-	buf.Write(b)
-	buf.WriteByte('\n')
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (d *dawarichV2Writer) Close() error {
-	for month, buf := range d.monthly {
+	defer func() {
+		for _, f := range d.monthly {
+			f.Close()
+			os.Remove(f.Name())
+		}
+	}()
+
+	for month, f := range d.monthly {
+		st, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if _, err := f.Seek(0, 0); err != nil {
+			return err
+		}
 		name := fmt.Sprintf("points/%s.jsonl", month)
 		if err := d.tw.WriteHeader(&tar.Header{
-			Name: name, Mode: 0o600, Size: int64(buf.Len()),
+			Name: name, Mode: 0o600, Size: st.Size(),
 		}); err != nil {
 			return err
 		}
-		if _, err := d.tw.Write(buf.Bytes()); err != nil {
+		if _, err := io.Copy(d.tw, f); err != nil {
 			return err
 		}
 	}

@@ -181,8 +181,19 @@ type PointQuery struct {
 
 // QueryPoints 按时间窗 + 设备过滤；user_id 强制带入 WHERE。
 func (r *Repo) QueryPoints(ctx context.Context, q PointQuery) ([]model.Point, error) {
+	var raw []model.Point
+	err := r.QueryPointsStream(ctx, q, func(p model.Point) error {
+		raw = append(raw, p)
+		return nil
+	})
+	return raw, err
+}
+
+// QueryPointsStream 流式查询；每读到一条 Point 记录即调用 fn。
+// 适用于大批量数据导出或聚合场景。
+func (r *Repo) QueryPointsStream(ctx context.Context, q PointQuery, fn func(model.Point) error) error {
 	if q.UserID == 0 {
-		return nil, errors.New("QueryPoints: user_id 必填，防止越权")
+		return errors.New("QueryPointsStream: user_id 必填，防止越权")
 	}
 	tx := r.DB.WithContext(ctx).Model(&model.Point{}).
 		Where("user_id = ?", q.UserID)
@@ -196,23 +207,31 @@ func (r *Repo) QueryPoints(ctx context.Context, q PointQuery) ([]model.Point, er
 		tx = tx.Where("device_id IN ?", q.DeviceIDs)
 	}
 	tx = tx.Order("timestamp ASC")
-	if q.Limit > 0 {
-		tx = tx.Limit(q.Limit)
+
+	rows, err := tx.Rows()
+	if err != nil {
+		return err
 	}
-	var raw []model.Point
-	if err := tx.Find(&raw).Error; err != nil {
-		return nil, err
-	}
-	if q.Sample > 1 {
-		out := make([]model.Point, 0, len(raw)/q.Sample+1)
-		for i, p := range raw {
-			if i%q.Sample == 0 {
-				out = append(out, p)
-			}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var p model.Point
+		if err := r.DB.ScanRows(rows, &p); err != nil {
+			return err
 		}
-		return out, nil
+		count++
+		if q.Sample > 1 && (count-1)%q.Sample != 0 {
+			continue
+		}
+		if err := fn(p); err != nil {
+			return err
+		}
+		if q.Limit > 0 && count >= q.Limit {
+			break
+		}
 	}
-	return raw, nil
+	return nil
 }
 
 // CountPoints 仅统计用户自己的点。

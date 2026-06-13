@@ -16,11 +16,7 @@ import (
 type gpxParser struct{}
 
 func (p *gpxParser) Parse(ctx context.Context, r io.Reader, emit func(*model.Point) error) error {
-	raw, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	g, err := gpx.ParseBytes(raw)
+	g, err := gpx.Parse(r)
 	if err != nil {
 		return err
 	}

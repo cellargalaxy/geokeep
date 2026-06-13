@@ -132,20 +132,14 @@ func (m *Manager) handle(ctx context.Context, j exportJob) {
 		_ = m.repo.UpdateExport(ctx, j.userID, j.exportID, map[string]any{"status": "failed", "error_message": err.Error()})
 		return
 	}
-	pts, err := m.repo.QueryPoints(ctx, repo.PointQuery{UserID: j.userID, From: j.startAt, To: j.endAt})
+	err = m.repo.QueryPointsStream(ctx, repo.PointQuery{UserID: j.userID, From: j.startAt, To: j.endAt}, func(p model.Point) error {
+		return writer.Write(p)
+	})
 	if err != nil {
 		writer.Close()
 		f.Close()
 		_ = m.repo.UpdateExport(ctx, j.userID, j.exportID, map[string]any{"status": "failed", "error_message": err.Error()})
 		return
-	}
-	for _, p := range pts {
-		if err := writer.Write(p); err != nil {
-			writer.Close()
-			f.Close()
-			_ = m.repo.UpdateExport(ctx, j.userID, j.exportID, map[string]any{"status": "failed", "error_message": err.Error()})
-			return
-		}
 	}
 	if err := writer.Close(); err != nil {
 		f.Close()
